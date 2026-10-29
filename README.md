@@ -1,6 +1,6 @@
 # Artefact Finder
 
-**0.2.0-beta.1** — evidence-first log investigation skills. This beta includes the offline `mail-log-triage` Codex skill and Python helper for Dovecot POP3/IMAP investigations, expanded authentication backends and declarative YAML review rules.
+**0.3.0-beta.1** — evidence-first log investigation skills. This beta adds disk-backed repeated same-account multi-IP login coincidence detection, configurable windows and YAML thresholds to the offline Dovecot helper.
 
 The helper streams log files, records SHA-256 and byte offsets, parses authentication and mail actions, decodes MIME subjects, and exports review candidates. It does not infer compromise, identify subscribers, correlate concurrent sessions, make network requests or change mail systems.
 
@@ -32,12 +32,29 @@ Built-in rules live in `skills/mail-log-triage/rules/*.yaml`:
 | `AF-MAIL-001` | Decoded PIN-subject message operations, excluding the known “pin brazing” false positive |
 | `AF-TRANSFER-001` | POP3 RETR byte counters at or above 50,000,000 bytes |
 | `AF-CONNECTION-001` | Incomplete authentication, only with `--profile extended` |
+| `AF-CORRELATION-001` | Same host/account/protocol/IP pair with at least 2 distinct ending-second coincidences; default window 5 seconds |
 
 Use `--rules-dir /path/to/local-rules` to replace the built-in rule directory, `--profile extended` for connection context, or `--large-retr-bytes 100000000` to override YAML RETR-byte thresholds. Rules are local trusted configuration, loaded with `yaml.safe_load`; there are no Python expressions or executable operators. See [rule schema](skills/mail-log-triage/references/rules.md).
 
 The parser supports classic and selected modern login envelopes, `auth-worker` backend contexts, PAM syslog, SQL/LDAP/passwd-file failures, IPv6, and reported attempt counts. Explicit failure reasons stay separate from incomplete connections and backend infrastructure errors. Backend rows do not invent a POP3/IMAP protocol. Submission/managesieve login labels are retained but full SMTP/Sieve analysis is not implemented. This is format coverage, not a claim to support every Dovecot version/configuration.
 
 **Output change from 0.1:** findings now contain structured `rules` entries instead of the old `reasons` list. Manifests contain rule IDs, versions and SHA-256 hashes, selected profile and threshold override. Raw duplicate counts and unknown action source IP remain unchanged.
+
+## Repeated checks from multiple IPs
+
+```sh
+python skills/mail-log-triage/scripts/triage.py --year 2026 --timezone Europe/Vilnius --multi-ip-window 5 --exclude-correlation-ip 192.0.2.50 --output results /path/to/mail.log
+```
+
+`--multi-ip-window` overrides the YAML window (0..86400 seconds; zero means exactly the same UTC second). `--exclude-correlation-ip` is repeatable and affects only this detector: raw authentication and message actions remain available. There are no built-in customer/provider IP allowlists.
+
+The detector considers successful POP3/IMAP logins only. It canonicalizes mapped IPv4 endpoints, groups by host/account/protocol, and sorts unique UTC times on disk across all input files. Unknown/ambiguous/nonexistent times are excluded from correlation and counted; original events are retained. It needs confirmed year and timezone. Missing time does not imply that no overlapping checks occurred.
+
+Counts represent distinct pair ending UTC seconds, not people, devices, actual overlapping sessions or independent attacks. Repeated rows or multiple logins from the same endpoint in the same second do not inflate counts. A three-IP coincidence produces three pairs. Each pair also has a distinct local-day count and exact-second count. Adjust `pair_occurrences` and `pair_days` minimums in the YAML rule to require longer-term repetition.
+
+All pair summaries and occurrences are exported, even below the YAML finding threshold. Evidence references identify both original login rows. `correlation.sqlite` is retained as disk-backed investigation state and may contain sensitive identifiers. New `findings.jsonl` records distinguish `finding_type: event` from `finding_type: correlation`; consumers must not assume every finding has a single event_id.
+
+Every manifest records engine name, repository URL, engine version, schema version, analysis start and generation timestamps with explicit offsets. Reports produced from these results must additionally state their own report revision and generation date/time/timezone, separately from the engine version.
 
 ## Beta scope
 

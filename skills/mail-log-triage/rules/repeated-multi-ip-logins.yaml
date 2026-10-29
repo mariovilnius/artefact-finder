@@ -1,0 +1,22 @@
+id: AF-CORRELATION-001
+title: Repeated same-account login coincidences from distinct IPs
+version: '1'
+level: review
+profiles: [normal, extended]
+correlation:
+  type: same_account_multi_ip
+  window_seconds: 5
+match:
+  - field: event_type
+    op: equals
+    value: multi_ip_login_pair
+  - field: pair_occurrences
+    op: gte
+    value: 2
+  - field: pair_days
+    op: gte
+    value: 1
+explanation: A host/account/protocol/IP pair has repeated successful login timestamps within the configured window; actual concurrent sessions and unauthorized access are not established.
+false_positives:
+  - Multiple authorized devices, shared polling services, VPN reconnects or normal synchronization.
+  - Proxy endpoints represent a server-visible peer, not necessarily the browser or subscriber IP.

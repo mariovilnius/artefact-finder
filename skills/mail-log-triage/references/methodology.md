@@ -22,7 +22,7 @@ Prefer explicit shared session keys; PID requires host and process lifetime. Sam
 
 ## Search artifacts
 
-Build account/IP/protocol/outcome baselines before prioritizing new or rare sources. Check shared IPs across accounts, failure/success sequences, unusual protocols, security-message operations and large transfers. Record facts, alternatives, confidence and needed additional evidence for every finding. These advanced correlations are analyst steps, not implemented detectors in the beta helper.
+Build account/IP/protocol/outcome baselines before prioritizing new or rare sources. Check shared IPs across accounts, failure/success sequences, unusual protocols, security-message operations and large transfers. Record facts, alternatives, confidence and needed additional evidence for every finding. Version 0.3 automates repeated same-account/protocol multi-IP login-time coincidences; actual session overlap, ownership and other advanced correlations remain analyst steps. See correlation.md for counting and time exclusions.
 
 Decode MIME subjects; match words and provider-specific templates, not random encoded session substrings. Lexical PIN matches include unrelated correspondence. After reviewing matches, follow full Message-ID with account and mailbox context across source files, including rows without subjects. The helper flags lexical matches only; cross-file message tracking is an analyst step in this beta.
 

@@ -12,4 +12,6 @@
 
 Outputs may contain sensitive addresses, subjects and message IDs. Do not commit them. Use only synthetic examples in bug reports and public tests. The helper refuses an existing output directory; if a run fails, consider the new directory incomplete and use a different new directory for a retry. It never deletes an output directory automatically.
 
-No multi-year inference, compressed input, HTML/PDF report builder, RDAP lookup, automatic message-ID second pass or concurrent session reconstruction is included in beta 0.2.0.
+Version 0.3 adds pair summaries/occurrences, disk-backed state and correlation findings described in [correlation semantics](correlation.md). Manifests also contain `engine` (name, URL, version), manifest schema version, analysis start UTC, generated UTC and optional generated local timestamp. These describe result generation, not event times or a downstream report's revision.
+
+No multi-year inference, compressed input, HTML/PDF report builder, RDAP lookup, automatic message-ID second pass or concurrent session reconstruction is included in beta 0.3.0. Login-time coincidence detection is not actual session reconstruction.

@@ -5,14 +5,18 @@ import hashlib
 import ipaddress
 import json
 import re
+import sqlite3
 from collections import Counter
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import yaml
 
-VERSION = '0.2.0-beta.1'
+VERSION = '0.3.0-beta.1'
+ENGINE_NAME = 'Artefact Finder'
+ENGINE_URL = 'https://github.com/mariovilnius/artefact-finder'
 PREFIX = re.compile(r'^(?P<stamp>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+dovecot(?:-auth)?(?:\[\d+\])?:\s+(?P<body>.*)$')
 MONTHS = dict(zip('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(), range(1, 13)))
 DEFAULT_RULES = Path(__file__).resolve().parents[1] / 'rules'
@@ -56,13 +60,13 @@ def load_rules(directory=None):
     if not paths:
         raise ValueError('No YAML rules found')
     rules, ids = [], set()
-    allowed_fields = {'event_type', 'protocol', 'subject', 'retr_bytes', 'auth_reason'}
+    allowed_fields = {'event_type', 'protocol', 'subject', 'retr_bytes', 'auth_reason', 'pair_occurrences', 'pair_days'}
     operators = {'equals', 'in', 'gte', 'word', 'not_contains'}
     for path in paths:
         data = path.read_bytes()
         rule = yaml.safe_load(data)
         required = {'id', 'title', 'version', 'level', 'profiles', 'match', 'explanation', 'false_positives'}
-        if not isinstance(rule, dict) or set(rule) != required:
+        if not isinstance(rule, dict) or not required.issubset(rule) or set(rule)-required-{'correlation'}:
             raise ValueError('Invalid rule keys: ' + path.name)
         if any(not isinstance(rule[k], str) or not rule[k].strip() for k in ['id', 'title', 'version', 'level', 'explanation']):
             raise ValueError('Rule metadata must be nonempty strings')
@@ -81,12 +85,20 @@ def load_rules(directory=None):
             field, op, value = condition['field'], condition['op'], condition['value']
             if field not in allowed_fields or op not in operators:
                 raise ValueError('Unsupported field or operator')
-            if op == 'gte' and (type(value) not in (int, float) or field != 'retr_bytes' or not 0 <= value < float('inf')):
-                raise ValueError('gte requires finite nonnegative retr_bytes threshold')
+            if op == 'gte' and (type(value) not in (int, float) or field not in {'retr_bytes', 'pair_occurrences', 'pair_days'} or not 0 <= value < float('inf')):
+                raise ValueError('gte requires a finite nonnegative numeric counter threshold')
             if op == 'in' and (not isinstance(value, list) or not value or any(not isinstance(x, str) for x in value)):
                 raise ValueError('in requires string values')
             if op in {'equals', 'word', 'not_contains'} and (not isinstance(value, str) or not value):
                 raise ValueError('String operator requires nonempty string')
+        if 'correlation' in rule:
+            config = rule['correlation']
+            if not isinstance(config, dict) or set(config) != {'type', 'window_seconds'} or config['type'] != 'same_account_multi_ip':
+                raise ValueError('Invalid correlation configuration')
+            if type(config['window_seconds']) is not int or not 0 <= config['window_seconds'] <= 86400:
+                raise ValueError('Correlation window must be an integer from 0 to 86400 seconds')
+        if sum('correlation' in r for r in rules) + int('correlation' in rule) > 1:
+            raise ValueError('Only one multi-IP correlation rule is supported per rule directory')
         rule['_file'] = path.name
         rule['_sha256'] = hashlib.sha256(data).hexdigest()
         rules.append(rule)
@@ -118,6 +130,97 @@ def evaluate_rules(event, rules, profile='normal', large_bytes=None):
         if matched:
             hits.append({k: rule[k] for k in ['id', 'version', 'title', 'level', 'explanation', 'false_positives']})
     return hits
+
+
+def canonical_ip(value):
+    address = ipaddress.ip_address(value)
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return str(address)
+
+
+class MultiIPDetector:
+    """Disk-backed login coincidence analysis, never session-overlap attribution."""
+    def __init__(self, database, window_seconds=5, excluded_ips=()):
+        if type(window_seconds) is not int or not 0 <= window_seconds <= 86400:
+            raise ValueError('Invalid multi-IP time window')
+        self.window = window_seconds
+        self.excluded = {canonical_ip(ip) for ip in excluded_ips}
+        self.stats = Counter()
+        self.db = sqlite3.connect(database)
+        self.db.execute('CREATE TABLE logins(host TEXT, account TEXT, protocol TEXT, ip TEXT, second INTEGER, local TEXT, evidence TEXT, PRIMARY KEY(host,account,protocol,ip,second))')
+        self.db.execute('CREATE TABLE pairs(pair_id TEXT, second INTEGER, local_day TEXT, delta INTEGER, evidence TEXT, PRIMARY KEY(pair_id,second))')
+
+    def close(self):
+        self.db.close()
+
+    def add(self, event):
+        if event.get('event_type') != 'auth_success' or event.get('protocol') not in {'pop3', 'imap'}:
+            return
+        self.stats['success_rows_considered'] += 1
+        if not event.get('account') or not event.get('host') or not event.get('source_ip'):
+            self.stats['missing_identity_or_ip'] += 1
+            return
+        ip = canonical_ip(event['source_ip'])
+        if ip in self.excluded:
+            self.stats['excluded_ip_rows'] += 1
+            return
+        if event.get('time_status') != 'unique' or len(event.get('utc_candidates', [])) != 1:
+            self.stats['nonunique_time_rows'] += 1
+            return
+        stamp = datetime.fromisoformat(event['utc_candidates'][0])
+        local = event['local_candidates'][0]
+        evidence = {k: event.get(k) for k in ['event_id', 'source_id', 'file', 'line', 'byte_offset', 'session_id']}
+        evidence.update(host=event['host'], account=event['account'], protocol=event['protocol'], ip=ip, timestamp_utc=stamp.isoformat(), timestamp_local=local)
+        serialized = json.dumps(evidence, sort_keys=True)
+        # Keep one deterministic representative per endpoint/UTC-second, even
+        # across files or for duplicate lines with different session IDs.
+        self.db.execute('INSERT INTO logins VALUES(?,?,?,?,?,?,?) ON CONFLICT(host,account,protocol,ip,second) DO UPDATE SET evidence=excluded.evidence WHERE excluded.evidence < logins.evidence',
+                        (event['host'], event['account'], event['protocol'], ip, int(stamp.timestamp()), local, serialized))
+        if self.stats['success_rows_considered'] % 10000 == 0:
+            self.db.commit()
+
+    def summaries(self, output):
+        self.db.commit()
+        self.stats['distinct_endpoint_seconds'] = self.db.execute('SELECT COUNT(*) FROM logins').fetchone()[0]
+        self.db.execute('CREATE INDEX login_order ON logins(host,account,protocol,second,ip)')
+        active, previous_group = {}, None
+        query = 'SELECT host,account,protocol,ip,second,local,evidence FROM logins ORDER BY host,account,protocol,second,ip'
+        for host, account, protocol, ip, second, local, encoded in self.db.execute(query):
+            group = (host, account, protocol)
+            if group != previous_group:
+                active = {}
+                previous_group = group
+            for oldip, (oldsecond, oldencoded) in list(active.items()):
+                if second-oldsecond > self.window:
+                    del active[oldip]
+                    continue
+                if oldip == ip:
+                    continue
+                ips = sorted([ip, oldip])
+                pair_id = hashlib.sha256(json.dumps([host, account, protocol, ips, self.window]).encode()).hexdigest()
+                evidence = dict(pair_id=pair_id, host=host, account=account, protocol=protocol, ips=ips, window_seconds=self.window,
+                                ending_utc=datetime.fromtimestamp(second, timezone.utc).isoformat(), ending_local=local,
+                                delta_seconds=second-oldsecond, login_a=json.loads(oldencoded), login_b=json.loads(encoded),
+                                attribution='login_time_coincidence_not_session_overlap')
+                payload = json.dumps(evidence, sort_keys=True)
+                self.db.execute('INSERT INTO pairs VALUES(?,?,?,?,?) ON CONFLICT(pair_id,second) DO UPDATE SET delta=excluded.delta,evidence=excluded.evidence WHERE excluded.delta < pairs.delta OR (excluded.delta=pairs.delta AND excluded.evidence < pairs.evidence)',
+                                (pair_id, second, local[:10], second-oldsecond, payload))
+            active[ip] = (second, encoded)
+        self.db.commit()
+        self.stats['pair_occurrences'] = self.db.execute('SELECT COUNT(*) FROM pairs').fetchone()[0]
+        with (Path(output)/'multi-ip-occurrences.jsonl').open('w', encoding='utf-8') as handle:
+            for (encoded,) in self.db.execute('SELECT evidence FROM pairs ORDER BY second,pair_id'):
+                handle.write(encoded+'\n')
+        groupquery = 'SELECT pair_id,COUNT(*),COUNT(DISTINCT local_day),SUM(delta=0),MIN(second),MAX(second) FROM pairs GROUP BY pair_id ORDER BY pair_id'
+        for pair_id, count, days, exact, first, last in self.db.execute(groupquery):
+            first_e = json.loads(self.db.execute('SELECT evidence FROM pairs WHERE pair_id=? AND second=?', (pair_id, first)).fetchone()[0])
+            last_e = json.loads(self.db.execute('SELECT evidence FROM pairs WHERE pair_id=? AND second=?', (pair_id, last)).fetchone()[0])
+            self.stats['pair_groups'] += 1
+            yield dict(event_type='multi_ip_login_pair', correlation_id=pair_id, host=first_e['host'], account=first_e['account'], protocol=first_e['protocol'],
+                       ips=first_e['ips'], window_seconds=self.window, pair_occurrences=count, pair_days=days, exact_second_occurrences=exact,
+                       first_utc=first_e['ending_utc'], last_utc=last_e['ending_utc'], first_local=first_e['ending_local'], last_local=last_e['ending_local'],
+                       first_evidence=first_e, last_evidence=last_e, evidence_file='multi-ip-occurrences.jsonl', attribution='login_time_coincidence_not_session_overlap')
 
 
 def subject_decode(value):
@@ -230,12 +333,20 @@ def parse(raw, year=None, zone=None):
     return event
 
 
-def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, profile='normal'):
+def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, profile='normal', multi_ip_window=None, exclude_correlation_ips=()):
+    started_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
     if profile not in {'normal', 'extended'}:
         raise ValueError('Unknown profile')
     if large_bytes is not None and (type(large_bytes) is not int or large_bytes < 0):
         raise ValueError('large_bytes must be a nonnegative integer')
     rules = load_rules(rules_dir)
+    correlation_rule = next((r for r in rules if 'correlation' in r and profile in r['profiles']), None)
+    if multi_ip_window is not None and (type(multi_ip_window) is not int or not 0 <= multi_ip_window <= 86400):
+        raise ValueError('multi_ip_window must be an integer from 0 to 86400')
+    excluded_ips = sorted({canonical_ip(ip) for ip in exclude_correlation_ips})
+    if correlation_rule is None and (multi_ip_window is not None or excluded_ips):
+        raise ValueError('Correlation options require an active multi-IP YAML rule')
+    window = multi_ip_window if multi_ip_window is not None else correlation_rule['correlation']['window_seconds'] if correlation_rule else None
     if zone:
         ZoneInfo(zone)  # Fail before creating output when timezone data is missing.
     paths = [Path(p).resolve() for p in inputs]
@@ -252,7 +363,11 @@ def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, 
     ips = Counter()
     sources = []
     # Two passes per source: hash original bytes, then parse with stable provenance.
-    with (output / 'events.jsonl').open('w', encoding='utf-8') as events, (output / 'findings.jsonl').open('w', encoding='utf-8') as findings, (output / 'unparsed.jsonl').open('w', encoding='utf-8') as unparsed:
+    detector = None
+    with ExitStack() as resources, (output / 'events.jsonl').open('w', encoding='utf-8') as events, (output / 'findings.jsonl').open('w', encoding='utf-8') as findings, (output / 'unparsed.jsonl').open('w', encoding='utf-8') as unparsed:
+        if correlation_rule:
+            detector = MultiIPDetector(output/'correlation.sqlite', window, excluded_ips)
+            resources.callback(detector.close)
         for path in paths:
             h = hashlib.sha256()
             with path.open('rb') as source:
@@ -283,6 +398,8 @@ def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, 
                     event['duplicate_session_record'] = bool(event.get('session_id') and fingerprint in seen_sessions)
                     if event.get('session_id'):
                         seen_sessions.add(fingerprint)
+                    if detector:
+                        detector.add(event)
                     counts[event['event_type']] += 1
                     if event.get('source_ip'):
                         ips[(event['account'] or '', event['source_ip'], event['protocol'] or '', event['event_type'])] += 1
@@ -290,16 +407,31 @@ def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, 
                     hits = evaluate_rules(event, rules, profile, large_bytes)
                     if hits:
                         counts['review_candidate_events'] += 1
-                        findings.write(json.dumps(dict(event_id=event['event_id'], rules=hits, status='unreviewed', file=path.name, line=number), ensure_ascii=False) + '\n')
+                        findings.write(json.dumps(dict(finding_type='event', event_id=event['event_id'], rules=hits, status='unreviewed', file=path.name, line=number), ensure_ascii=False) + '\n')
             if second_hash.hexdigest() != source_id:
                 raise ValueError('Input changed during analysis; discard incomplete output')
             sources.append(dict(file=path.name, sha256=source_id, bytes=offset, lines=lines))
+        if detector:
+            with (output/'multi-ip-summary.jsonl').open('w', encoding='utf-8') as summaries:
+                for summary in detector.summaries(output):
+                    summaries.write(json.dumps(summary, ensure_ascii=False)+'\n')
+                    hits = evaluate_rules(summary, [correlation_rule], profile)
+                    if hits:
+                        counts['review_candidate_correlations'] += 1
+                        findings.write(json.dumps(dict(summary, finding_type='correlation', rules=hits, status='unreviewed'), ensure_ascii=False)+'\n')
     with (output / 'ip-summary.csv').open('w', encoding='utf-8-sig', newline='') as handle:
         writer = csv.writer(handle)
         writer.writerow(['account', 'source_ip', 'protocol', 'event_type', 'raw_count'])
         for key, count in sorted(ips.items()):
             writer.writerow([("'" + v) if v.startswith(('=', '+', '-', '@', '\t', '\r', '\n')) else v for v in key] + [count])
     manifest = dict(version=VERSION, sources=sources, coverage=dict(counts), year=year, timezone=zone, time_basis='caller_supplied' if year or zone else 'unknown', large_retr_bytes_override=large_bytes, profile=profile, rules=[dict(id=r['id'], version=r['version'], file=r['_file'], sha256=r['_sha256']) for r in rules], session_attribution='not_implemented', duplicate_counts='raw_counts_preserved', privacy='offline_no_network_requests')
+    manifest['multi_ip_correlation'] = dict(enabled=detector is not None, window_seconds=window, window_override=multi_ip_window, excluded_ips=excluded_ips,
+                                          grouping=['host','account','protocol','canonical_ip_pair'], time_basis='unique_UTC_only',
+                                          count_unit='distinct_pair_ending_UTC_seconds', stats=dict(detector.stats) if detector else {})
+    generated_at = datetime.now(timezone.utc)
+    manifest.update(manifest_schema_version='1.2', engine=dict(name=ENGINE_NAME, url=ENGINE_URL, version=VERSION),
+                    analysis_started_at_utc=started_at, generated_at_utc=generated_at.isoformat(timespec='seconds'),
+                    generated_at_local=generated_at.astimezone(ZoneInfo(zone)).isoformat(timespec='seconds') if zone else None)
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
 
@@ -313,12 +445,14 @@ def main():
     parser.add_argument('--large-retr-bytes', type=int, help='Override YAML retr_bytes thresholds')
     parser.add_argument('--rules-dir', type=Path, help='Local YAML rule directory')
     parser.add_argument('--profile', choices=['normal', 'extended'], default='normal')
+    parser.add_argument('--multi-ip-window', type=int, help='Override YAML multi-IP window, 0..86400 seconds; 0 means same-second')
+    parser.add_argument('--exclude-correlation-ip', action='append', default=[], help='Exclude this endpoint only from multi-IP correlation; repeatable')
     args = parser.parse_args()
     if args.year is not None and not 1 <= args.year <= 9999:
         parser.error('year must be between 1 and 9999')
     if args.large_retr_bytes is not None and args.large_retr_bytes < 0:
         parser.error('large-retr-bytes must be non-negative')
-    result = run(args.inputs, args.output, args.year, args.timezone, args.large_retr_bytes, args.rules_dir, args.profile)
+    result = run(args.inputs, args.output, args.year, args.timezone, args.large_retr_bytes, args.rules_dir, args.profile, args.multi_ip_window, args.exclude_correlation_ip)
     print(json.dumps(result['coverage']))
 
 

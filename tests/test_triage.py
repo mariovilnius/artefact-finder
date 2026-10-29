@@ -186,7 +186,7 @@ class RuleTests(unittest.TestCase):
             manifest = triage.run([source], root / 'out', year=2026, zone='Europe/Vilnius')
             self.assertEqual(manifest['coverage']['auth_failure'], 1)
             self.assertEqual(manifest['coverage']['review_candidate_events'], 2)
-            self.assertEqual(len(manifest['rules']), 4)
+            self.assertEqual(len(manifest['rules']), 5)
             self.assertTrue(all(len(r['sha256']) == 64 for r in manifest['rules']))
             findings = [json.loads(x) for x in (root / 'out/findings.jsonl').read_text().splitlines()]
             self.assertEqual(findings[0]['rules'][0]['id'], 'AF-AUTH-001')
