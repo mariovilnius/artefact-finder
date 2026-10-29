@@ -1,0 +1,12 @@
+id: AF-CONNECTION-001
+title: Incomplete authentication connection
+version: '1'
+level: context
+profiles: [extended]
+match:
+  - field: event_type
+    op: equals
+    value: login_aborted
+explanation: Authentication did not complete; included only in extended review and not classified as a password failure.
+false_positives:
+  - Health checks, TLS negotiation problems, network interruptions or misconfigured clients.

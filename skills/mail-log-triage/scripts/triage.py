@@ -10,10 +10,114 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import yaml
 
-VERSION = '0.1.0-beta.2'
-PREFIX = re.compile(r'^(?P<stamp>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+dovecot(?:\[\d+\])?:\s+(?P<body>.*)$')
+VERSION = '0.2.0-beta.1'
+PREFIX = re.compile(r'^(?P<stamp>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+dovecot(?:-auth)?(?:\[\d+\])?:\s+(?P<body>.*)$')
 MONTHS = dict(zip('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(), range(1, 13)))
+DEFAULT_RULES = Path(__file__).resolve().parents[1] / 'rules'
+
+
+def auth_classify(description):
+    """Classify observed outcomes, not attacker intent. No upstream regex copied."""
+    low = description.lower()
+    reasons = [('temporary authentication failure', 'temporary_failure'),
+               ('proxy dest auth failed', 'proxy_auth_failure'),
+               ('password mismatch', 'password_mismatch'),
+               ('unknown user', 'unknown_user'),
+               ('user not known', 'unknown_user'),
+               ('invalid credentials', 'invalid_credentials'),
+               ('permission denied', 'permission_denied'),
+               ('authentication failure', 'auth_failed'),
+               ('authentication failed', 'auth_failed'),
+               ('auth failed', 'auth_failed')]
+    for marker, reason in reasons:
+        if marker in low:
+            return 'auth_failure', reason
+    if re.search(r'(?:disabled|disallowed)\s+\S+\s+auth', low):
+        return 'auth_failure', 'auth_mechanism_rejected'
+    if any(marker in low for marker in ['no auth attempts', 'before auth was ready',
+                                        "didn't finish", 'during tls handshake',
+                                        'aborted login', 'login aborted']):
+        return 'login_aborted', 'incomplete_auth'
+    return 'unknown', None
+
+
+def set_ip(event, name, value):
+    try:
+        event[name] = str(ipaddress.ip_address(value))
+    except ValueError:
+        event[name + '_invalid'] = value
+
+
+def load_rules(directory=None):
+    """Local declarative config only: safe YAML, known fields/operators, no eval."""
+    paths = sorted(Path(directory or DEFAULT_RULES).glob('*.yaml'))
+    if not paths:
+        raise ValueError('No YAML rules found')
+    rules, ids = [], set()
+    allowed_fields = {'event_type', 'protocol', 'subject', 'retr_bytes', 'auth_reason'}
+    operators = {'equals', 'in', 'gte', 'word', 'not_contains'}
+    for path in paths:
+        data = path.read_bytes()
+        rule = yaml.safe_load(data)
+        required = {'id', 'title', 'version', 'level', 'profiles', 'match', 'explanation', 'false_positives'}
+        if not isinstance(rule, dict) or set(rule) != required:
+            raise ValueError('Invalid rule keys: ' + path.name)
+        if any(not isinstance(rule[k], str) or not rule[k].strip() for k in ['id', 'title', 'version', 'level', 'explanation']):
+            raise ValueError('Rule metadata must be nonempty strings')
+        if rule['id'] in ids:
+            raise ValueError('Duplicate rule ID: ' + rule['id'])
+        ids.add(rule['id'])
+        if not isinstance(rule['profiles'], list) or not rule['profiles'] or any(x not in ['normal', 'extended'] for x in rule['profiles']):
+            raise ValueError('Invalid profiles')
+        if not isinstance(rule['false_positives'], list) or any(not isinstance(x, str) for x in rule['false_positives']):
+            raise ValueError('Invalid false positives')
+        if not isinstance(rule['match'], list) or not rule['match']:
+            raise ValueError('Rule needs conditions')
+        for condition in rule['match']:
+            if not isinstance(condition, dict) or set(condition) != {'field', 'op', 'value'}:
+                raise ValueError('Invalid condition')
+            field, op, value = condition['field'], condition['op'], condition['value']
+            if field not in allowed_fields or op not in operators:
+                raise ValueError('Unsupported field or operator')
+            if op == 'gte' and (type(value) not in (int, float) or field != 'retr_bytes' or not 0 <= value < float('inf')):
+                raise ValueError('gte requires finite nonnegative retr_bytes threshold')
+            if op == 'in' and (not isinstance(value, list) or not value or any(not isinstance(x, str) for x in value)):
+                raise ValueError('in requires string values')
+            if op in {'equals', 'word', 'not_contains'} and (not isinstance(value, str) or not value):
+                raise ValueError('String operator requires nonempty string')
+        rule['_file'] = path.name
+        rule['_sha256'] = hashlib.sha256(data).hexdigest()
+        rules.append(rule)
+    return rules
+
+
+def evaluate_rules(event, rules, profile='normal', large_bytes=None):
+    hits = []
+    for rule in rules:
+        if profile not in rule['profiles']:
+            continue
+        matched = True
+        for condition in rule['match']:
+            field, op, wanted = condition['field'], condition['op'], condition['value']
+            actual = event.get(field)
+            if field == 'retr_bytes' and op == 'gte' and large_bytes is not None:
+                wanted = large_bytes
+            if actual is None:
+                matched = False
+                break
+            if op == 'equals': ok = actual == wanted
+            elif op == 'in': ok = actual in wanted
+            elif op == 'gte': ok = type(actual) in (int, float) and actual >= wanted
+            elif op == 'word': ok = isinstance(actual, str) and re.search(r'\b' + re.escape(wanted) + r'\b', actual, re.I) is not None
+            else: ok = isinstance(actual, str) and wanted.casefold() not in actual.casefold()
+            if not ok:
+                matched = False
+                break
+        if matched:
+            hits.append({k: rule[k] for k in ['id', 'version', 'title', 'level', 'explanation', 'false_positives']})
+    return hits
 
 
 def subject_decode(value):
@@ -57,25 +161,28 @@ def parse(raw, year=None, zone=None):
     m = PREFIX.match(raw)
     if not m:
         return None
-    body = m['body']
+    body = re.sub(r'^(?:Info|Warning|Error|Debug):\s*', '', m['body'])
     event = dict(host=m['host'], event_type='unknown', protocol=None, account=None, source_ip=None, local_ip=None)
     event.update(normalize_time(m['stamp'], year, zone))
-    login = re.match(r'(pop3|imap)-login: (.*)', body)
+    login = re.match(r'(pop3|imap|submission|managesieve)-login: (.*)', body)
     action = re.match(r'(pop3|imap)\(([^)]+)\): (.*)', body)
     if login:
         event['protocol'] = login[1]
-        desc = login[2]
+        desc = re.sub(r'^(?:Info|Warning|Error|Debug):\s*', '', login[2])
+        event['parser_variant'] = 'login'
         user = re.search(r'user=<([^>]*)>', desc)
         event['account'] = user[1] if user else None
-        event['event_type'] = 'auth_success' if desc.startswith('Login:') else 'auth_failure' if re.search(r'auth failed|authentication failed', desc, re.I) else 'login_aborted' if 'Aborted login' in desc else 'unknown'
+        if desc.startswith('Login:'):
+            event['event_type'], event['auth_reason'] = 'auth_success', 'explicit_login'
+        else:
+            event['event_type'], event['auth_reason'] = auth_classify(desc.split('user=<', 1)[0])
+        attempts = re.search(r'\b(\d+) attempts?\b', desc.split('user=<', 1)[0])
+        event['attempts_reported'] = int(attempts[1]) if attempts else None
         event['tls_marker'] = 'present' if re.search(r'(?:, |\b)TLS(?:,|:|\s|$)', desc) else 'unknown'
         for field, name in [('rip', 'source_ip'), ('lip', 'local_ip')]:
             match = re.search(r'\b' + field + r'=([^,\s]+)', desc)
             if match:
-                try:
-                    event[name] = str(ipaddress.ip_address(match[1]))
-                except ValueError:
-                    event[name + '_invalid'] = match[1]
+                set_ip(event, name, match[1])
         session = re.search(r'session=<([^>]+)>', desc)
         event['session_id'] = session[1] if session else None
     elif action:
@@ -99,10 +206,36 @@ def parse(raw, year=None, zone=None):
             match = re.search(r'\b' + key + r'=(\d+)/(\d+)', desc)
             if match:
                 event[key + '_pair_raw'] = match[0].split('=', 1)[1]
+    else:
+        # Backend context is extracted separately from outcome text. Endpoint
+        # fields belong to this row only; protocol remains unknown if absent.
+        backend = re.search(r'\b(pam|sql|ldap|passwd-file|checkpassword|bsdauth)\(([^)]*)\):\s*(.*)', body)
+        pam = re.search(r'\bauthentication failure;.*\brhost=([^\s;]+)', body, re.I)
+        if backend and body.startswith(('auth:', 'auth(', 'auth<', 'auth-worker', 'pam(')):
+            event['parser_variant'] = 'auth_backend'
+            event['auth_backend'] = backend[1]
+            context = backend[2].split(',')
+            event['account'] = context[0] or None
+            if len(context) > 1 and context[1]:
+                set_ip(event, 'source_ip', context[1])
+            if len(context) > 2 and context[2].startswith('<'):
+                event['session_id'] = context[2].strip('<>')
+            event['event_type'], event['auth_reason'] = auth_classify(backend[3])
+        elif pam:
+            event['parser_variant'], event['auth_backend'] = 'pam_syslog', 'pam'
+            set_ip(event, 'source_ip', pam[1])
+            user = re.search(r'(?:^|[;\s])user=([^\s;]+)', body)
+            event['account'] = user[1] if user else None
+            event['event_type'], event['auth_reason'] = auth_classify(body)
     return event
 
 
-def run(inputs, output, year=None, zone=None, large_bytes=50000000):
+def run(inputs, output, year=None, zone=None, large_bytes=None, rules_dir=None, profile='normal'):
+    if profile not in {'normal', 'extended'}:
+        raise ValueError('Unknown profile')
+    if large_bytes is not None and (type(large_bytes) is not int or large_bytes < 0):
+        raise ValueError('large_bytes must be a nonnegative integer')
+    rules = load_rules(rules_dir)
     if zone:
         ZoneInfo(zone)  # Fail before creating output when timezone data is missing.
     paths = [Path(p).resolve() for p in inputs]
@@ -152,15 +285,12 @@ def run(inputs, output, year=None, zone=None, large_bytes=50000000):
                         seen_sessions.add(fingerprint)
                     counts[event['event_type']] += 1
                     if event.get('source_ip'):
-                        ips[(event['account'] or '', event['source_ip'], event['protocol'], event['event_type'])] += 1
+                        ips[(event['account'] or '', event['source_ip'], event['protocol'] or '', event['event_type'])] += 1
                     events.write(json.dumps(event, ensure_ascii=False) + '\n')
-                    reasons = []
-                    if re.search(r'\bPIN\b', event.get('subject', ''), re.I):
-                        reasons.append('PIN_subject_candidate_requires_review')
-                    if event.get('retr_bytes', 0) >= large_bytes:
-                        reasons.append('large_RETR_bytes_not_exfiltration_verdict')
-                    if reasons:
-                        findings.write(json.dumps(dict(event_id=event['event_id'], reasons=reasons, status='unreviewed', file=path.name, line=number), ensure_ascii=False) + '\n')
+                    hits = evaluate_rules(event, rules, profile, large_bytes)
+                    if hits:
+                        counts['review_candidate_events'] += 1
+                        findings.write(json.dumps(dict(event_id=event['event_id'], rules=hits, status='unreviewed', file=path.name, line=number), ensure_ascii=False) + '\n')
             if second_hash.hexdigest() != source_id:
                 raise ValueError('Input changed during analysis; discard incomplete output')
             sources.append(dict(file=path.name, sha256=source_id, bytes=offset, lines=lines))
@@ -169,7 +299,7 @@ def run(inputs, output, year=None, zone=None, large_bytes=50000000):
         writer.writerow(['account', 'source_ip', 'protocol', 'event_type', 'raw_count'])
         for key, count in sorted(ips.items()):
             writer.writerow([("'" + v) if v.startswith(('=', '+', '-', '@', '\t', '\r', '\n')) else v for v in key] + [count])
-    manifest = dict(version=VERSION, sources=sources, coverage=dict(counts), year=year, timezone=zone, time_basis='caller_supplied' if year or zone else 'unknown', large_retr_bytes=large_bytes, session_attribution='not_implemented', duplicate_counts='raw_counts_preserved', privacy='offline_no_network_requests')
+    manifest = dict(version=VERSION, sources=sources, coverage=dict(counts), year=year, timezone=zone, time_basis='caller_supplied' if year or zone else 'unknown', large_retr_bytes_override=large_bytes, profile=profile, rules=[dict(id=r['id'], version=r['version'], file=r['_file'], sha256=r['_sha256']) for r in rules], session_attribution='not_implemented', duplicate_counts='raw_counts_preserved', privacy='offline_no_network_requests')
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
 
@@ -180,13 +310,15 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--year', type=int)
     parser.add_argument('--timezone')
-    parser.add_argument('--large-retr-bytes', type=int, default=50000000)
+    parser.add_argument('--large-retr-bytes', type=int, help='Override YAML retr_bytes thresholds')
+    parser.add_argument('--rules-dir', type=Path, help='Local YAML rule directory')
+    parser.add_argument('--profile', choices=['normal', 'extended'], default='normal')
     args = parser.parse_args()
     if args.year is not None and not 1 <= args.year <= 9999:
         parser.error('year must be between 1 and 9999')
-    if args.large_retr_bytes < 0:
+    if args.large_retr_bytes is not None and args.large_retr_bytes < 0:
         parser.error('large-retr-bytes must be non-negative')
-    result = run(args.inputs, args.output, args.year, args.timezone, args.large_retr_bytes)
+    result = run(args.inputs, args.output, args.year, args.timezone, args.large_retr_bytes, args.rules_dir, args.profile)
     print(json.dumps(result['coverage']))
 
 

@@ -1,0 +1,19 @@
+id: AF-MAIL-001
+title: PIN message operation
+version: '1'
+level: review
+profiles: [normal, extended]
+match:
+  - field: event_type
+    op: in
+    value: [mail_copy, mail_delete_flag, mail_expunge, mail_save]
+  - field: subject
+    op: word
+    value: PIN
+  - field: subject
+    op: not_contains
+    value: pin brazing
+explanation: A message operation references a PIN word in its decoded subject; verify message purpose and actual action.
+false_positives:
+  - Unrelated correspondence about a PIN or an authorized user cleaning messages.
+  - A copy or INBOX expunge does not prove deletion of a Trash copy.

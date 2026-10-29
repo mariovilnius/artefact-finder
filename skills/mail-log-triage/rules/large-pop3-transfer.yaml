@@ -1,0 +1,15 @@
+id: AF-TRANSFER-001
+title: Large POP3 RETR byte counter
+version: '1'
+level: review
+profiles: [normal, extended]
+match:
+  - field: protocol
+    op: equals
+    value: pop3
+  - field: retr_bytes
+    op: gte
+    value: 50000000
+explanation: The RETR byte counter exceeds the review threshold; this is not an exfiltration verdict or a unique-message count.
+false_positives:
+  - New device setup, client profile rebuild, migration or normal synchronization.

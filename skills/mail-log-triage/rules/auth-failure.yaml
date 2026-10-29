@@ -1,0 +1,13 @@
+id: AF-AUTH-001
+title: Explicit authentication failure
+version: '1'
+level: review
+profiles: [normal, extended]
+match:
+  - field: event_type
+    op: equals
+    value: auth_failure
+explanation: An explicit authentication failure was logged; this does not establish malicious intent.
+false_positives:
+  - Outdated client passwords or user typing mistakes.
+  - Temporary backend failures; inspect auth_reason before treating as bad credentials.
