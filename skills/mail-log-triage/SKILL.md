@@ -38,6 +38,8 @@ For repeated same-account multi-IP checks, use `--multi-ip-window SECONDS` (defa
 
 ## Deliver
 
+For the uncommon hypothesis of one traveling client with several configured mailboxes, explicitly opt into `scripts/client_continuity.py`; read [client continuity](references/client-continuity.md). It is not a default alert or a device/person identification system. Keep its development module version separate from the published base parser. For design research, see [product ideas and license boundaries](references/product-ideas.md); proposed features are not implemented guarantees.
+
 For comparisons across mailboxes, use the experimental `scripts/cross_mailbox.py` module and read [cross-mailbox semantics](references/cross-mailbox.md). It reports shared authentication endpoints, failure-to-success sequences, nearby mail actions and large RETR context under separate YAML policy. For overlapping operator/network groups, read [IP association semantics](references/ip-relations.md). Record the actual base parser and module versions from their manifests, especially when comparing older runs. Several devices/networks may belong to one user, and shared IPs may represent several users. Temporal action context never supplies a missing source IP.
 
 Produce a concise finding summary plus exact evidence references, facts versus hypotheses, confidence/alternatives and precise provider requests. Review candidates are not confirmed incidents. Explain coverage and parser limitations. Do not publish, email, block addresses or change accounts as part of this skill unless separately requested.

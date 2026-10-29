@@ -1,0 +1,7 @@
+id: AF-CONTINUITY-001
+version: 1
+execution: explicit_opt_in_only
+min_bundle_accounts: 2
+poll_gap_max_seconds: 900
+max_handover_span_seconds: 2592000
+interpretation: possible_client_continuity_never_person_or_device_identity

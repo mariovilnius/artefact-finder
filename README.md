@@ -106,6 +106,23 @@ include their revision, generation time/zone, engine URL/version and exact evide
 Implementation is original MIT code. Release source and synthetic tests contain
 no customer logs, IP inventories, ownership caches or investigation reports.
 
+## Optional client continuity (development module 0.5.0-beta.1)
+
+This opt-in module reviews the uncommon traveling-laptop / multi-mailbox
+hypothesis. It is not part of the default parser run and never identifies a
+person/device, infers physical travel, suppresses findings or blocks addresses.
+The published base parser remains 0.4.0-beta.2; component versions are distinct.
+
+```sh
+python skills/mail-log-triage/scripts/client_continuity.py --database /private/evidence.sqlite --parent-manifest results/manifest.json --output /private/new-continuity --account u@example.test --reference-ip 192.0.2.1
+```
+
+See [semantics and statuses](skills/mail-log-triage/references/client-continuity.md),
+the separate `relation-rules/client-continuity.yaml`, and
+[product research](skills/mail-log-triage/references/product-ideas.md).
+58 synthetic tests now cover the full helper suite, including switching,
+overlap, missing history, mapped IPs, proxy exclusions and ambiguous UTC.
+
 ## License
 
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 mariovilnius.
