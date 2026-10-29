@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mail Log Triage Beta"
+  short_description: "Evidence-first Dovecot mail log investigations"
+  default_prompt: "Use $mail-log-triage to investigate these mail logs and report traceable artifacts with uncertainty."
