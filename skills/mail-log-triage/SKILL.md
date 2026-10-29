@@ -38,6 +38,8 @@ For repeated same-account multi-IP checks, use `--multi-ip-window SECONDS` (defa
 
 ## Deliver
 
+For comparisons across mailboxes, use the local experimental `scripts/cross_mailbox.py` module and read [cross-mailbox semantics](references/cross-mailbox.md). It reports shared authentication endpoints, failure-to-success sequences, nearby mail actions and large RETR context under separate YAML policy. For overlapping operator/network groups, read [IP association semantics](references/ip-relations.md). Keep base parser and experimental module versions distinct; these local previews are not published releases. Several devices/networks may belong to one user, and shared IPs may represent several users. Temporal action context never supplies a missing source IP.
+
 Produce a concise finding summary plus exact evidence references, facts versus hypotheses, confidence/alternatives and precise provider requests. Review candidates are not confirmed incidents. Explain coverage and parser limitations. Do not publish, email, block addresses or change accounts as part of this skill unless separately requested.
 
 Every generated report must identify its own report revision, generation date/time with timezone, engine name (Artefact Finder), engine URL (https://github.com/mariovilnius/artefact-finder), and engine version. Keep report revision, engine version, generation time and investigated event times distinct. Reuse the manifest's engine/generation metadata; assign the report's actual revision rather than guessing it.

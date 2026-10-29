@@ -73,6 +73,28 @@ Design references and implementation provenance are documented in [THIRD_PARTY_N
 
 Include a minimal **synthetic** input, expected observable behavior and a regression test. Do not upload real mail logs, email addresses, message contents, tokens or customer IP inventories. Security issues: do not attach sensitive logs to public issues; use private GitHub reporting if enabled, otherwise first ask the maintainer for a private channel without disclosing details.
 
+## Local development preview: IP associations
+
+The experimental `scripts/ip_relations.py` module is labelled 0.4.0-beta.1;
+the released base parser remains 0.3.0-beta.1. This is a local preview, not a
+published release. See [association semantics](skills/mail-log-triage/references/ip-relations.md).
+It adds overlapping network/operator views, IP memberships across accounts and
+adjacent-login sequence evidence. No identity or maliciousness is inferred.
+Use `triage.py --ip-relations` for a new parse, or run the module against a
+previously verified `correlation.sqlite`. Optional offline ownership records
+remain private. Configuration lives separately in `relation-rules/`.
+
+## Local development preview: cross-mailbox comparisons
+
+`scripts/cross_mailbox.py` (0.4.0-beta.2) compares shared endpoints and
+failure/success sequences with retrieval/deletion context. It accepts retained
+events JSONL or a compatible private SQLite index. See the
+[comparison methodology](skills/mail-log-triage/references/cross-mailbox.md).
+Policy lives in `relation-rules/cross-mailbox.yaml`. The base parser remains
+0.3.0-beta.1; local preview modules have not been published as a GitHub release.
+All implementation is original MIT code; no upstream filters or case data are
+bundled.
+
 ## License
 
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 mariovilnius.

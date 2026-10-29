@@ -447,12 +447,22 @@ def main():
     parser.add_argument('--profile', choices=['normal', 'extended'], default='normal')
     parser.add_argument('--multi-ip-window', type=int, help='Override YAML multi-IP window, 0..86400 seconds; 0 means same-second')
     parser.add_argument('--exclude-correlation-ip', action='append', default=[], help='Exclude this endpoint only from multi-IP correlation; repeatable')
+    parser.add_argument('--ip-relations', action='store_true', help='Run experimental offline IP association module after correlation')
+    parser.add_argument('--ownership', type=Path, help='Offline ownership JSON for --ip-relations; no network requests')
+    parser.add_argument('--relation-rules', type=Path, default=DEFAULT_RULES.parent/'relation-rules/ip-associations.yaml')
     args = parser.parse_args()
+    if args.ownership and not args.ip_relations:
+        parser.error('--ownership requires --ip-relations')
     if args.year is not None and not 1 <= args.year <= 9999:
         parser.error('year must be between 1 and 9999')
     if args.large_retr_bytes is not None and args.large_retr_bytes < 0:
         parser.error('large-retr-bytes must be non-negative')
     result = run(args.inputs, args.output, args.year, args.timezone, args.large_retr_bytes, args.rules_dir, args.profile, args.multi_ip_window, args.exclude_correlation_ip)
+    if args.ip_relations:
+        from ip_relations import run as run_relations
+        if not (args.output/'correlation.sqlite').exists():
+            parser.error('--ip-relations requires an active multi-IP correlation rule')
+        run_relations(args.output/'correlation.sqlite', args.output/'ip-relations', args.relation_rules, args.ownership)
     print(json.dumps(result['coverage']))
 
 

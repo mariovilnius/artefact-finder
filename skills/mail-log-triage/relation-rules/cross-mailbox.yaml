@@ -1,0 +1,12 @@
+id: AF-CROSS-001
+version: 1
+failure_success_seconds: 1800
+action_after_success_seconds: 60
+transfer_login_before_seconds: 1800
+transfer_login_after_seconds: 60
+large_retr_bytes: 50000000
+bulk_gap_seconds: 30
+bulk_min_message_keys: 20
+security_subject_pattern: '(?i)\bPIN\b'
+security_subject_exclude: '(?i)\bpin brazing\b'
+interpretation: observable_sequences_and_temporal_context_never_confirmed_incident
