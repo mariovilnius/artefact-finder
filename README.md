@@ -1,6 +1,6 @@
 # Artefact Finder
 
-**0.1.0-beta.1** — evidence-first log investigation skills. This initial beta includes the offline `mail-log-triage` Codex skill and Python helper for Dovecot POP3/IMAP investigations.
+**0.1.0-beta.2** — evidence-first log investigation skills. This beta includes the offline `mail-log-triage` Codex skill and Python helper for Dovecot POP3/IMAP investigations.
 
 The helper streams log files, records SHA-256 and byte offsets, parses authentication and mail actions, decodes MIME subjects, and exports review candidates. It does not infer compromise, identify subscribers, correlate concurrent sessions, make network requests or change mail systems.
 
@@ -39,4 +39,4 @@ Include a minimal **synthetic** input, expected observable behavior and a regres
 
 ## License
 
-License selection is pending. Public availability alone does not grant an open-source license; no additional license rights are granted by this beta release. Choose a license before describing the project as open source.
+Licensed under the [MIT License](LICENSE). Copyright (c) 2026 mariovilnius.

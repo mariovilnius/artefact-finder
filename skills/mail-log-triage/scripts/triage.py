@@ -11,7 +11,7 @@ from email.header import decode_header
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-VERSION = '0.1.0-beta.1'
+VERSION = '0.1.0-beta.2'
 PREFIX = re.compile(r'^(?P<stamp>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+dovecot(?:\[\d+\])?:\s+(?P<body>.*)$')
 MONTHS = dict(zip('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(), range(1, 13)))
 
