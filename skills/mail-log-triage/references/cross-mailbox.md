@@ -1,6 +1,6 @@
 # Comparing mailboxes and sequences
 
-Local experimental module: `scripts/cross_mailbox.py`, version 0.4.0-beta.2.
+Experimental offline module: `scripts/cross_mailbox.py`, version 0.4.0-beta.2.
 The base parser's version stays independently recorded in the manifest. Inputs
 and outputs contain private case evidence; never commit them to the public repo.
 

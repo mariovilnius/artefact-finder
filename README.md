@@ -1,6 +1,6 @@
 # Artefact Finder
 
-**0.3.0-beta.1** — evidence-first log investigation skills. This beta adds disk-backed repeated same-account multi-IP login coincidence detection, configurable windows and YAML thresholds to the offline Dovecot helper.
+**0.4.0-beta.2** — offline, evidence-first mail log investigation. This beta adds overlapping IP/network/operator views, cross-mailbox authentication and mail-action comparisons, configurable YAML policies, and an HTML review generator. See [release notes](RELEASE_NOTES.md).
 
 The helper streams log files, records SHA-256 and byte offsets, parses authentication and mail actions, decodes MIME subjects, and exports review candidates. It does not infer compromise, identify subscribers, correlate concurrent sessions, make network requests or change mail systems.
 
@@ -73,27 +73,38 @@ Design references and implementation provenance are documented in [THIRD_PARTY_N
 
 Include a minimal **synthetic** input, expected observable behavior and a regression test. Do not upload real mail logs, email addresses, message contents, tokens or customer IP inventories. Security issues: do not attach sensitive logs to public issues; use private GitHub reporting if enabled, otherwise first ask the maintainer for a private channel without disclosing details.
 
-## Local development preview: IP associations
+## IP associations and cross-mailbox comparisons
 
-The experimental `scripts/ip_relations.py` module is labelled 0.4.0-beta.1;
-the released base parser remains 0.3.0-beta.1. This is a local preview, not a
-published release. See [association semantics](skills/mail-log-triage/references/ip-relations.md).
-It adds overlapping network/operator views, IP memberships across accounts and
-adjacent-login sequence evidence. No identity or maliciousness is inferred.
-Use `triage.py --ip-relations` for a new parse, or run the module against a
-previously verified `correlation.sqlite`. Optional offline ownership records
-remain private. Configuration lives separately in `relation-rules/`.
+All shipped modules report version 0.4.0-beta.2. Older input manifests retain
+their original parser version; a comparison pass is not a fresh raw-log parse.
 
-## Local development preview: cross-mailbox comparisons
+```sh
+python skills/mail-log-triage/scripts/triage.py --year 2026 --timezone Europe/Vilnius --ip-relations --output results /path/to/mail.log
+python skills/mail-log-triage/scripts/cross_mailbox.py --events results/events.jsonl --index /private/new-index.sqlite --parent-manifest results/manifest.json --output /private/new-comparison
+python skills/mail-log-triage/scripts/render_cross_mailbox.py /private/new-comparison --revision 0.1
+```
 
-`scripts/cross_mailbox.py` (0.4.0-beta.2) compares shared endpoints and
-failure/success sequences with retrieval/deletion context. It accepts retained
-events JSONL or a compatible private SQLite index. See the
-[comparison methodology](skills/mail-log-triage/references/cross-mailbox.md).
-Policy lives in `relation-rules/cross-mailbox.yaml`. The base parser remains
-0.3.0-beta.1; local preview modules have not been published as a GitHub release.
-All implementation is original MIT code; no upstream filters or case data are
-bundled.
+Use a new index and output directory. All operations stay offline. Optional
+ownership records are supplied locally; ASN/operator values are never guessed.
+Provider proxy exclusions label proxy endpoints without suppressing mail actions.
+
+- [IP association semantics](skills/mail-log-triage/references/ip-relations.md):
+  configurable IPv4/IPv6 buckets, registered networks, operators/ASNs, shared
+  account memberships and adjacent login sequences. Groups can overlap.
+- [Cross-mailbox methodology](skills/mail-log-triage/references/cross-mailbox.md):
+  shared endpoints, failure to first success, nearby RETR/mail actions, large
+  transfers, bulk operations and MIME-decoded security-message candidates.
+- Separate policies: `relation-rules/ip-associations.yaml` and
+  `relation-rules/cross-mailbox.yaml`, independent of event alert rules.
+
+One user can have several devices and dynamic IPs; one NAT/VPN endpoint can
+represent several people. Network/operator membership does not identify a person.
+Actions without explicit session evidence retain unknown source IPs; nearby
+logins remain candidates. RETR counts commands, not unique messages. Reports
+include their revision, generation time/zone, engine URL/version and exact evidence.
+
+Implementation is original MIT code. Release source and synthetic tests contain
+no customer logs, IP inventories, ownership caches or investigation reports.
 
 ## License
 

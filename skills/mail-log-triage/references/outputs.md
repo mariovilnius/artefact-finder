@@ -14,4 +14,4 @@ Outputs may contain sensitive addresses, subjects and message IDs. Do not commit
 
 Version 0.3 adds pair summaries/occurrences, disk-backed state and correlation findings described in [correlation semantics](correlation.md). Manifests also contain `engine` (name, URL, version), manifest schema version, analysis start UTC, generated UTC and optional generated local timestamp. These describe result generation, not event times or a downstream report's revision.
 
-No multi-year inference, compressed input, HTML/PDF report builder, RDAP lookup, automatic message-ID second pass or concurrent session reconstruction is included in beta 0.3.0. Login-time coincidence detection is not actual session reconstruction.
+Version 0.4 adds offline IP association exports and cross-mailbox comparisons, security-message action tracking, and an HTML review renderer. See [IP associations](ip-relations.md) and [cross-mailbox outputs](cross-mailbox.md). No multi-year inference, compressed input, PDF generator, online RDAP lookup, general session attribution or concurrent session reconstruction is included. Login-time coincidence detection is not actual session reconstruction.
