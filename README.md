@@ -1,6 +1,6 @@
 # Artefact Finder
 
-**0.4.0-beta.2** — offline, evidence-first mail log investigation. This beta adds overlapping IP/network/operator views, cross-mailbox authentication and mail-action comparisons, configurable YAML policies, and an HTML review generator. See [release notes](RELEASE_NOTES.md).
+**0.5.0-beta.1** — offline, evidence-first mail log investigation. This beta adds an explicitly opt-in client-continuity module for the uncommon traveling-laptop / multi-mailbox hypothesis, with configurable policy, exact handover evidence and cautious interpretation. See [release notes](RELEASE_NOTES.md).
 
 The helper streams log files, records SHA-256 and byte offsets, parses authentication and mail actions, decodes MIME subjects, and exports review candidates. It does not infer compromise, identify subscribers, correlate concurrent sessions, make network requests or change mail systems.
 
@@ -75,7 +75,7 @@ Include a minimal **synthetic** input, expected observable behavior and a regres
 
 ## IP associations and cross-mailbox comparisons
 
-All shipped modules report version 0.4.0-beta.2. Older input manifests retain
+All shipped modules report version 0.5.0-beta.1. Older input manifests retain
 their original parser version; a comparison pass is not a fresh raw-log parse.
 
 ```sh
@@ -106,12 +106,12 @@ include their revision, generation time/zone, engine URL/version and exact evide
 Implementation is original MIT code. Release source and synthetic tests contain
 no customer logs, IP inventories, ownership caches or investigation reports.
 
-## Optional client continuity (development module 0.5.0-beta.1)
+## Optional client continuity (0.5.0-beta.1)
 
 This opt-in module reviews the uncommon traveling-laptop / multi-mailbox
 hypothesis. It is not part of the default parser run and never identifies a
 person/device, infers physical travel, suppresses findings or blocks addresses.
-The published base parser remains 0.4.0-beta.2; component versions are distinct.
+The release parser and modules report 0.5.0-beta.1; retained input manifests keep their original versions.
 
 ```sh
 python skills/mail-log-triage/scripts/client_continuity.py --database /private/evidence.sqlite --parent-manifest results/manifest.json --output /private/new-continuity --account u@example.test --reference-ip 192.0.2.1

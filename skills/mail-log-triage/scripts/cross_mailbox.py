@@ -6,7 +6,7 @@ from email.header import decode_header,make_header
 from pathlib import Path
 import yaml
 
-VERSION='0.4.0-beta.2'
+VERSION='0.5.0-beta.1'
 URL='https://github.com/mariovilnius/artefact-finder'
 ACTIONS=('mail_copy','mail_delete_flag','mail_expunge')
 SCHEMA='account TEXT,host TEXT,protocol TEXT,kind TEXT,ip TEXT,second INTEGER,time TEXT,file TEXT,line INTEGER,raw TEXT,session TEXT,retr_commands INTEGER,retr_bytes INTEGER,del_counter INTEGER'

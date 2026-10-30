@@ -1,3 +1,49 @@
+# Artefact Finder v0.5.0-beta.1
+
+## Added
+
+- Explicitly opt-in offline client-continuity module for reviewing a possible
+  traveling client configured with multiple mailboxes. It is not run by default.
+- Observed account bundles, protocol membership, active days and bounded median
+  polling gaps; canonical mapped IPv6 and same-second endpoint deduplication.
+- Exact candidate first/last login, preceding and subsequent reference endpoint
+  evidence, intermediate IP intervals and concurrent reference-endpoint activity.
+- Separate outcomes: compatible-but-unconfirmed handover, overlapping endpoint
+  activity, insufficient history and observation gaps beyond configured bounds.
+- Repeatable account scope, caller-supplied or explicitly described automatic
+  reference selection, confirmed proxy exclusions and a separate YAML policy.
+- HTML/JSON outputs with exact source lines, offsets, component versions,
+  source/policy/module provenance and explicit interpretation limits.
+- Methodology and official-source product research documenting proposals and
+  license boundaries without copying third-party implementations or rules.
+
+## Interpretation and compatibility
+
+- Account bundles, polling rhythms and IPs do not identify a person or device.
+  One user can have multiple devices; NAT/VPN can represent different people.
+- Login timing overlap is not reconstructed session overlap. Travel does not
+  change the server timezone. Missing or ambiguous UTC is not correlated.
+- No physical geolocation, impossible-travel verdict, automatic risk suppression,
+  blocking, live mailbox access or network enrichment is introduced.
+- Existing authentication, PIN, transfer and deletion findings remain visible.
+  The optional hypothesis never inherits a missing action IP or closes an incident.
+- All release modules report 0.5.0-beta.1. Older input parser metadata remains
+  unchanged when a verified retained evidence index is used.
+
+## Validation and licensing
+
+58 synthetic tests pass locally. The expanded suite covers compatible switching,
+overlapping endpoints, missing history, long gaps, empty data, canonical mapped
+IPs, duplicate endpoints, proxy exclusions and ambiguous timestamps, alongside
+the existing parser/correlation/rendering tests. Python 3.10+.
+
+MIT license retained. Source, documentation, policies and synthetic tests only:
+no customer logs, addresses, IP inventories, ownership caches, reports, private
+indexes or credentials are included. No competitor source/rule expressions are
+bundled. The previous v0.4.0-beta.2 release and tag remain unchanged.
+
+---
+
 # Artefact Finder v0.4.0-beta.2
 
 ## Added

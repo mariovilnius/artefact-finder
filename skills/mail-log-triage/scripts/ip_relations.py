@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import yaml
 
-VERSION = '0.4.0-beta.2'
+VERSION = '0.5.0-beta.1'
 ENGINE_URL = 'https://github.com/mariovilnius/artefact-finder'
 
 def canonical(value):
