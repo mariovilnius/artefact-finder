@@ -1,6 +1,6 @@
 # Artefact Finder
 
-**0.5.0-beta.1** — offline, evidence-first mail log investigation. This beta adds an explicitly opt-in client-continuity module for the uncommon traveling-laptop / multi-mailbox hypothesis, with configurable policy, exact handover evidence and cautious interpretation. See [release notes](RELEASE_NOTES.md).
+**0.5.0-beta.2** — offline, evidence-first mail log investigation. This beta adds account-isolated mailbox CSV exports and regression coverage for mixed RETR/deletion predicates. See [release notes](RELEASE_NOTES.md).
 
 The helper streams log files, records SHA-256 and byte offsets, parses authentication and mail actions, decodes MIME subjects, and exports review candidates. It does not infer compromise, identify subscribers, correlate concurrent sessions, make network requests or change mail systems.
 
@@ -75,7 +75,7 @@ Include a minimal **synthetic** input, expected observable behavior and a regres
 
 ## IP associations and cross-mailbox comparisons
 
-All shipped modules report version 0.5.0-beta.1. Older input manifests retain
+All shipped modules report version 0.5.0-beta.2. Older input manifests retain
 their original parser version; a comparison pass is not a fresh raw-log parse.
 
 ```sh
@@ -106,12 +106,12 @@ include their revision, generation time/zone, engine URL/version and exact evide
 Implementation is original MIT code. Release source and synthetic tests contain
 no customer logs, IP inventories, ownership caches or investigation reports.
 
-## Optional client continuity (0.5.0-beta.1)
+## Optional client continuity (0.5.0-beta.2)
 
 This opt-in module reviews the uncommon traveling-laptop / multi-mailbox
 hypothesis. It is not part of the default parser run and never identifies a
 person/device, infers physical travel, suppresses findings or blocks addresses.
-The release parser and modules report 0.5.0-beta.1; retained input manifests keep their original versions.
+The release parser and modules report 0.5.0-beta.2; retained input manifests keep their original versions.
 
 ```sh
 python skills/mail-log-triage/scripts/client_continuity.py --database /private/evidence.sqlite --parent-manifest results/manifest.json --output /private/new-continuity --account u@example.test --reference-ip 192.0.2.1
@@ -126,3 +126,29 @@ overlap, missing history, mapped IPs, proxy exclusions and ambiguous UTC.
 ## License
 
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 mariovilnius.
+
+## Account-scoped mailbox CSV exports
+
+Create a portable index from parser events using the cross-mailbox module (see
+[usage](skills/mail-log-triage/references/cross-mailbox.md)), then export an explicit
+mailbox into a new directory:
+
+```sh
+python skills/mail-log-triage/scripts/mailbox_csv.py --database evidence.sqlite --account user@example.test --output mailbox-review
+```
+
+`mail-actions.csv` includes copy, delete flag and expunge rows.
+`positive-retr-or-deletion.csv` includes rows with positive RETR command or deletion
+counters, without a size threshold. Every predicate is evaluated inside the same
+mandatory parameterized account scope: `account = ? AND (retr_commands > 0 OR del_counter > 0)`.
+The regression suite includes another mailbox with a positive deletion counter;
+its rows must never appear in the selected mailbox's CSV.
+
+The input index is opened read-only. Source time strings, offsets, ambiguous-time
+markers, source references and missing IPs are retained; no session IP is inferred.
+CSV cells that could execute spreadsheet formulas are apostrophe-prefixed for
+viewing. Consult original events for unchanged raw evidence. Counts are raw rows,
+not unique messages, downloads or confirmed deletions. The export manifest records
+the account, row counts, engine version, UTC generation time and output hashes.
+Existing output directories are rejected. This command exports CSV evidence, not
+an HTML/PDF report. No parser or detection policy changes are introduced.

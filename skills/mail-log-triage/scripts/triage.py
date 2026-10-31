@@ -14,7 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import yaml
 
-VERSION = '0.5.0-beta.1'
+VERSION = '0.5.0-beta.2'
 ENGINE_NAME = 'Artefact Finder'
 ENGINE_URL = 'https://github.com/mariovilnius/artefact-finder'
 PREFIX = re.compile(r'^(?P<stamp>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+dovecot(?:-auth)?(?:\[\d+\])?:\s+(?P<body>.*)$')

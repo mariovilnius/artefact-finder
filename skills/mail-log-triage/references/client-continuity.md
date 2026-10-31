@@ -1,4 +1,4 @@
-# Optional client continuity (module 0.5.0-beta.1)
+# Optional client continuity (module 0.5.0-beta.2)
 
 Use this uncommon, explicitly requested investigation when one person might
 carry a laptop configured with several mailboxes across changing networks.

@@ -1,3 +1,30 @@
+# Artefact Finder v0.5.0-beta.2
+
+## Account-isolated CSV exports
+
+- Add the offline `mailbox_csv.py` command for explicit per-account mail-action
+  and positive RETR/deletion-counter CSVs from a retained SQLite evidence index.
+- Require `account = ? AND (predicate)` so an OR branch cannot include another
+  mailbox's deletion rows. Parameterize account values and reject empty scopes.
+- Open input indexes read-only, reject existing output directories, preserve
+  source timestamps/offsets/references and unknown IPs, and escape spreadsheet
+  formulas in viewing CSVs. Record engine/module version, generation time,
+  account, counts and file hashes in a separate manifest.
+- Add synthetic two-mailbox regression coverage for both RETR and deletion
+  branches, all-action exports, zero counters, empty/literal account searches,
+  read-only evidence, time/IP preservation and output overwrite prevention.
+
+This ports a downstream report-export correction into a supported public helper;
+the previous public beta did not ship that downstream exporter. Parser and
+artifact-detection semantics are unchanged. HTML/PDF report generation remains a
+downstream step. All shipped modules report 0.5.0-beta.2; retained input manifests
+keep their original versions.
+
+61 synthetic tests pass locally. MIT retained. Release contains only source,
+documentation, policies and synthetic tests; no customer logs or case reports.
+
+---
+
 # Artefact Finder v0.5.0-beta.1
 
 ## Added

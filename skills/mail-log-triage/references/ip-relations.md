@@ -1,4 +1,4 @@
-# Experimental offline association views (0.5.0-beta.1)
+# Experimental offline association views (0.5.0-beta.2)
 
 Run the module on a completed correlation database, or use triage.py --ip-relations.
 
